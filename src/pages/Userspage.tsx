@@ -1,7 +1,7 @@
 // pages/UsersPage.jsx
 import { useState, useEffect, useCallback, type ChangeEvent } from "react";
 import { usersAPI } from "../api/index.js";
-import { Icon, Spinner, Badge, Avatar, Modal, Confirm, Empty } from "../components/Ui.jsx";
+import { Icon, Spinner, Badge, Avatar, Modal, Confirm, Empty } from "../components/UI.jsx";
 
 type User = {
   _id?: string;
