@@ -3,13 +3,16 @@
 // Server returns an HTML error page (404/500) instead of JSON.
 // We check Content-Type before calling .json() to give a proper error.
 
+type ApiRecord = Record<string, unknown>;
+type ApiResponse = Promise<unknown>;
+
 export const API_BASE = "http://localhost:5000/api";
 
 // ─── CORE REQUEST ─────────────────────────────────────────────────────────────
 export const request = async (
   path: string,
   options: RequestInit & { headers?: HeadersInit } = {}
-) => {
+): Promise<unknown> => {
   const token = localStorage.getItem("wos_token");
 
   const headers = {
@@ -18,7 +21,7 @@ export const request = async (
     ...(options.headers || {}),
   };
 
-  let res;
+  let res: Response;
   try {
     res = await fetch(`${API_BASE}${path}`, { ...options, headers });
   } catch (_) {
@@ -33,7 +36,7 @@ export const request = async (
   // Detect HTML response (server returned error page, not JSON)
   const ct = res.headers.get("content-type") || "";
   if (!ct.includes("application/json")) {
-    const STATUS_MSG = {
+    const STATUS_MSG: Record<number, string> = {
       404: `API route not found: ${path}`,
       401: "Session expired — please login again",
       403: "Access denied",
@@ -46,39 +49,39 @@ export const request = async (
   }
 
   const data = await res.json();
-  if (!res.ok) throw new Error(data.message || data.error || `Error ${res.status}`);
+  if (!res.ok) throw new Error((data as any).message || (data as any).error || `Error ${res.status}`);
   return data;
 };
 
 // ─── AUTH ─────────────────────────────────────────────────────────────────────
 export const authAPI = {
-  login: (email, password) =>
+  login: (email: string, password: string): ApiResponse =>
     request("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
-  register: (payload) =>
+  register: (payload: ApiRecord): ApiResponse =>
     request("/auth/register", { method: "POST", body: JSON.stringify(payload) }),
 };
 
 // ─── USERS ────────────────────────────────────────────────────────────────────
 export const usersAPI = {
-  getAll:    ()          => request("/users"),
-  getById:   (id)        => request(`/users/${id}`),
-  create:    (data)      => request("/users",       { method: "POST",   body: JSON.stringify(data) }),
-  update:    (id, data)  => request(`/users/${id}`, { method: "PATCH",  body: JSON.stringify(data) }),
-  delete:    async (id) => {
+  getAll: (): ApiResponse => request("/users"),
+  getById: (id: string): ApiResponse => request(`/users/${id}`),
+  create: (data: ApiRecord): ApiResponse =>
+    request("/users", { method: "POST", body: JSON.stringify(data) }),
+  update: (id: string, data: ApiRecord): ApiResponse =>
+    request(`/users/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  delete: async (id: string): Promise<unknown> => {
     const candidates = [
       `/users/${id}`,
       `/users/delete/${id}`,
       `/users/${id}/delete`,
       `/users/remove/${id}`,
-      `/users/${id}`,
-      `/users/delete/${id}`,
     ];
 
-    let lastError = null;
+    let lastError: unknown = null;
     for (const route of candidates) {
       try {
         return await request(route, { method: "DELETE" });
-      } catch (e) {
+      } catch (e: unknown) {
         const message = e instanceof Error ? e.message : String(e);
         if (!message.includes("API route not found")) throw e;
         lastError = e;
@@ -91,21 +94,23 @@ export const usersAPI = {
 
 // ─── TASKS ────────────────────────────────────────────────────────────────────
 export const tasksAPI = {
-  getAll:       ()             => request("/tasks"),
-  create:       (data)         => request("/tasks",              { method: "POST",  body: JSON.stringify(data) }),
-  update:       (id, data)     => request(`/tasks/${id}`,        { method: "PATCH", body: JSON.stringify(data) }),
-  updateStatus: (id, status)   => request(`/tasks/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
-  delete:       async (id) => {
+  getAll: (): ApiResponse => request("/tasks"),
+  create: (data: ApiRecord): ApiResponse =>
+    request("/tasks", { method: "POST", body: JSON.stringify(data) }),
+  update: (id: string, data: ApiRecord): ApiResponse =>
+    request(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  updateStatus: (id: string, status: string): ApiResponse =>
+    request(`/tasks/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
+  delete: async (id: string): Promise<unknown> => {
     try {
       return await request(`/tasks/${id}`, { method: "DELETE" });
-    } catch (e) {
+    } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       if (!message.includes("API route not found")) throw e;
 
-      // Backend route variants seen across project versions.
       try {
         return await request(`/tasks/delete/${id}`, { method: "DELETE" });
-      } catch (e2) {
+      } catch (e2: unknown) {
         const message2 = e2 instanceof Error ? e2.message : String(e2);
         if (!message2.includes("API route not found")) throw e2;
         return request(`/tasks/${id}/delete`, { method: "DELETE" });
@@ -116,19 +121,19 @@ export const tasksAPI = {
 
 // ─── SUBMISSIONS ──────────────────────────────────────────────────────────────
 export const submissionsAPI = {
-  getAll:       ()              => request("/submissions"),
-  create:       (data)          => request("/submissions",       { method: "POST", body: JSON.stringify(data) }),
-  updateStatus: (id, status)    => request(`/submissions/${id}`, { method: "PUT",  body: JSON.stringify({ status }) }),
-  delete:       async (id) => {
-    const candidates = [
-      `/submissions/${id}`,
-    ];
+  getAll: (): ApiResponse => request("/submissions"),
+  create: (data: ApiRecord): ApiResponse =>
+    request("/submissions", { method: "POST", body: JSON.stringify(data) }),
+  updateStatus: (id: string, status: string): ApiResponse =>
+    request(`/submissions/${id}`, { method: "PUT", body: JSON.stringify({ status }) }),
+  delete: async (id: string): Promise<unknown> => {
+    const candidates = [`/submissions/${id}`];
 
-    let lastError = null;
+    let lastError: unknown = null;
     for (const route of candidates) {
       try {
         return await request(route, { method: "DELETE" });
-      } catch (e) {
+      } catch (e: unknown) {
         const message = e instanceof Error ? e.message : String(e);
         if (!message.includes("API route not found")) throw e;
         lastError = e;
@@ -141,24 +146,31 @@ export const submissionsAPI = {
 
 // ─── INTERVIEWS ───────────────────────────────────────────────────────────────
 export const interviewsAPI = {
-  getAll:  ()         => request("/interviews"),
-  create:  (data)     => request("/interviews",               { method: "POST",  body: JSON.stringify(data) }),
-  advance: (id)       => request(`/interviews/${id}/advance`, { method: "PATCH" }),
-  update:  (id, data) => request(`/interviews/${id}`,         { method: "PATCH", body: JSON.stringify(data) }),
-  delete:  (id)       => request(`/interviews/${id}`,         { method: "DELETE" }),
+  getAll: (): ApiResponse => request("/interviews"),
+  create: (data: ApiRecord): ApiResponse =>
+    request("/interviews", { method: "POST", body: JSON.stringify(data) }),
+  advance: (id: string): ApiResponse =>
+    request(`/interviews/${id}/advance`, { method: "PATCH" }),
+  update: (id: string, data: ApiRecord): ApiResponse =>
+    request(`/interviews/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  delete: (id: string): ApiResponse =>
+    request(`/interviews/${id}`, { method: "DELETE" }),
 };
 
 // ─── PAYMENTS / SALARY ────────────────────────────────────────────────────────
 export const paymentsAPI = {
-  getAll:  ()     => request("/payments"),
-  create:  (data) => request("/payments",          { method: "POST",  body: JSON.stringify(data) }),
-  markPaid: (id)  => request(`/payments/${id}/pay`,{ method: "PATCH" }),   // FIX: was broken
-  delete:  (id)   => request(`/payments/${id}`,    { method: "DELETE" }),
+  getAll: (): ApiResponse => request("/payments"),
+  create: (data: ApiRecord): ApiResponse =>
+    request("/payments", { method: "POST", body: JSON.stringify(data) }),
+  markPaid: (id: string): ApiResponse =>
+    request(`/payments/${id}/pay`, { method: "PATCH" }),   // FIX: was broken
+  delete: (id: string): ApiResponse =>
+    request(`/payments/${id}`, { method: "DELETE" }),
 };
 
 // ─── MESSAGES ─────────────────────────────────────────────────────────────────
 export const messagesAPI = {
-  getHistory: (receiverId) => request(`/messages/${receiverId}`),
+  getHistory: (receiverId: string) => request(`/messages/${receiverId}`),
 };
 
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────

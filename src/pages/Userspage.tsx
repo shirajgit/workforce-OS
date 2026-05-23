@@ -1,26 +1,50 @@
 // pages/UsersPage.jsx
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, type ChangeEvent } from "react";
 import { usersAPI } from "../api/index.js";
-import { Icon, Spinner, Badge, Avatar, Modal, Confirm, Empty } from "../components/UI.jsx";
+import { Icon, Spinner, Badge, Avatar, Modal, Confirm, Empty } from "../components/Ui.jsx";
+
+type User = {
+  _id?: string;
+  name: string;
+  email: string;
+  role: string;
+  status?: string;
+  createdAt?: string;
+};
+
+type UserForm = {
+  name: string;
+  email: string;
+  password: string;
+  role: string;
+};
+
+type Props = {
+  toast: (message: string, type?: string) => void;
+};
 
 const ROLES = ["developer", "caller", "bidder"];
 
-export default function UsersPage({ toast }) {
-  const [users, setUsers]     = useState([]);
+export default function UsersPage({ toast }: Props) {
+  const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
-  const [modal, setModal]     = useState(null);   // null | "create" | user obj
-  const [confirm, setConfirm] = useState(null);   // user to delete
-  const [form, setForm]       = useState({ name: "", email: "", password: "", role: "developer" });
-  const [saving, setSaving]   = useState(false);
-  const [filter, setFilter]   = useState("all");
+  const [modal, setModal] = useState<"create" | null>(null);
+  const [confirm, setConfirm] = useState<User | null>(null);
+  const [form, setForm] = useState<UserForm>({ name: "", email: "", password: "", role: "developer" });
+  const [saving, setSaving] = useState(false);
+  const [filter, setFilter] = useState("all");
 
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const set = (k: keyof UserForm) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const load = useCallback(() => {
     setLoading(true);
     usersAPI.getAll()
-      .then(setUsers)
-      .catch((e) => toast(e.message, "error"))
+      .then((data) => setUsers(Array.isArray(data) ? (data as User[]) : []))
+      .catch((e: unknown) => {
+        const message = e instanceof Error ? e.message : String(e);
+        toast(message, "error");
+      })
       .finally(() => setLoading(false));
   }, [toast]);
 
@@ -31,34 +55,44 @@ export default function UsersPage({ toast }) {
     setSaving(true);
     try {
       const payload = {
-        ...form,
         name: form.name.trim(),
         email: form.email.trim().toLowerCase(),
         password: form.password.trim(),
+        role: form.role,
       };
       await usersAPI.create(payload);
       toast("User created!", "success");
       setModal(null);
       load();
-    } catch (e) { toast(e.message, "error"); }
-    finally { setSaving(false); }
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast(message, "error");
+    } finally { setSaving(false); }
   };
 
-  const handleToggle = async (u) => {
+  const handleToggle = async (u: User) => {
+    if (!u._id) return;
     try {
       await usersAPI.update(u._id, { status: u.status === "active" ? "inactive" : "active" });
       toast("User updated", "success");
       load();
-    } catch (e) { toast(e.message, "error"); }
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast(message, "error");
+    }
   };
 
-  const handleDelete = async (u) => {
+  const handleDelete = async (u: User) => {
+    if (!u._id) return;
     try {
       await usersAPI.delete(u._id);
       toast("User deleted", "success");
       setConfirm(null);
       load();
-    } catch (e) { toast(e.message, "error"); }
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast(message, "error");
+    }
   };
 
   const filtered = filter === "all" ? users : users.filter((u) => u.role === filter);

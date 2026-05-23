@@ -1,81 +1,106 @@
 // pages/SubmissionsPage.jsx
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, type ChangeEvent } from "react";
 import { submissionsAPI } from "../api/index.js";
 import { Icon, Spinner, Badge, Modal, Confirm, Empty } from "../components/UI.jsx";
+
+type Submission = {
+  _id?: string;
+  company: string;
+  position: string;
+  date?: string;
+  status?: string;
+};
+
+type User = {
+  role: string;
+};
+
+type Props = {
+  user: User;
+  toast: (message: string, type?: string) => void;
+};
 
 const STATUSES = ["Pending", "Response", "Interview", "Rejected"];
 const TODAY = new Date().toISOString().split("T")[0];
 
-export default function SubmissionsPage({ user, toast }) {
+export default function SubmissionsPage({ user, toast }: Props) {
   const canWrite = user.role === "owner" || user.role === "bidder";
 
-  const [subs,        setSubs]        = useState([]);
-  const [loading,     setLoading]     = useState(true);
-  const [modal,       setModal]       = useState(false);
-  const [confirm,     setConfirm]     = useState(null);
-  const [filter,      setFilter]      = useState("all");
-  const [updatingId,  setUpdatingId]  = useState(null);
-  const [saving,      setSaving]      = useState(false);
-  const [form,        setForm]        = useState({ company: "", position: "", date: TODAY });
+  const [subs, setSubs] = useState<Submission[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState(false);
+  const [confirm, setConfirm] = useState<Submission | null>(null);
+  const [filter, setFilter] = useState("all");
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState<Submission>({ company: "", position: "", date: TODAY });
 
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const set = (k: keyof Submission) => (e: ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   // ── Load ──────────────────────────────────────────────────────────────────
   const load = useCallback(() => {
     setLoading(true);
     submissionsAPI.getAll()
-      .then((data) => setSubs(Array.isArray(data) ? data : []))
-      .catch((e)   => toast(e.message, "error"))
-      .finally(()  => setLoading(false));
-  }, []); // eslint-disable-line
+      .then((data) => setSubs(Array.isArray(data) ? (data as Submission[]) : []))
+      .catch((e: unknown) => {
+        const message = e instanceof Error ? e.message : String(e);
+        toast(message, "error");
+      })
+      .finally(() => setLoading(false));
+  }, [toast]);
 
-  useEffect(() => { load(); }, []); // eslint-disable-line
+  useEffect(() => { load(); }, [load]);
 
   // ── Create ────────────────────────────────────────────────────────────────
   const handleCreate = async () => {
-    if (!form.company.trim())  { toast("Company name required", "error"); return; }
-    if (!form.position.trim()) { toast("Position required",     "error"); return; }
+    if (!form.company.trim()) { toast("Company name required", "error"); return; }
+    if (!form.position.trim()) { toast("Position required", "error"); return; }
     setSaving(true);
     try {
       await submissionsAPI.create({
-        company:  form.company.trim(),
+        company: form.company.trim(),
         position: form.position.trim(),
-        date:     form.date || TODAY,
+        date: form.date || TODAY,
       });
       toast("Submission logged!", "success");
       setModal(false);
       setForm({ company: "", position: "", date: TODAY });
       load();
-    } catch (e) {
-      toast(e.message, "error");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast(message, "error");
     } finally {
       setSaving(false);
     }
   };
 
   // ── Update status ─────────────────────────────────────────────────────────
-  const handleStatus = async (id, status) => {
+  const handleStatus = async (id: string | undefined, status: string) => {
+    if (!id) return;
     setUpdatingId(id);
     try {
       await submissionsAPI.updateStatus(id, status);
       toast("Status updated", "success");
       load();
-    } catch (e) {
-      toast(e.message, "error");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast(message, "error");
     } finally {
       setUpdatingId(null);
     }
   };
 
   // ── Delete ────────────────────────────────────────────────────────────────
-  const handleDelete = async (s) => {
+  const handleDelete = async (s: Submission) => {
+    if (!s._id) return;
     try {
       await submissionsAPI.delete(s._id);
       toast("Submission deleted", "success");
       setConfirm(null);
       load();
-    } catch (e) {
-      toast(e.message, "error");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast(message, "error");
     }
   };
 
