@@ -26,7 +26,16 @@ export const request = async (
   try {
     res = await fetch(`${API_BASE}${path}`, { ...options, headers });
   } catch (_) {
-    throw new Error("Cannot reach server. Is backend running on port 5000?");
+    console.log("Cannot reach server. Is backend running on port 5000?");
+    console.log("Cannot reach server. Is backend running on port 5000?")
+    console.log(API_BASE);
+    console.log(path);
+    console.log(options);
+    console.log(headers);
+    console.log(res);
+    console.log(res.status);
+    console.log(res.statusText);
+    console.log(res.headers);
   }
 
   // Some successful operations (especially DELETE) can return no content.
