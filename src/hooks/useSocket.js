@@ -2,7 +2,7 @@
 // Proper Socket.io hook — loads script dynamically, handles reconnect
 import { useState, useEffect, useRef, useCallback } from "react";
 
-const SOCKET_URL = "http://localhost:5000";
+const SOCKET_URL = "https://test-back-0mld.onrender.com";
 const SOCKET_CDN = "https://cdn.socket.io/4.7.2/socket.io.min.js";
 
 // Global socket singleton — one connection for the whole app
