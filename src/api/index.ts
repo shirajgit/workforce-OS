@@ -7,7 +7,7 @@ type ApiRecord = Record<string, unknown>;
 type ApiResponse = Promise<unknown>;
 
 
-const API_BASE = "https://test-back-0mld.onrender.com";
+const API_BASE = "https://test-back-0mld.onrender.com/api";
 
 // ─── CORE REQUEST ─────────────────────────────────────────────────────────────
 export const request = async (
