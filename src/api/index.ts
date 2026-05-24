@@ -25,7 +25,7 @@ export const request = async (
   try {
     res = await fetch(`${API_BASE}${path}`, { ...options, headers });
   } catch (_) {
-    throw new Error("Cannot reach server. Is backend running on port 5000?");
+    throw new Error(API_BASE + path);
   }
 
   // Some successful operations (especially DELETE) can return no content.
