@@ -170,7 +170,15 @@ export const paymentsAPI = {
 
 // ─── MESSAGES ─────────────────────────────────────────────────────────────────
 export const messagesAPI = {
-  getHistory: (receiverId: string) => request(`/messages/${receiverId}`),
+
+  getHistory: (receiverId: string) =>
+    request(`/messages/${receiverId}`),
+
+  send: (data: ApiRecord) =>
+    request("/messages", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
 };
 
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
