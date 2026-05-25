@@ -171,13 +171,17 @@ export const paymentsAPI = {
 // ─── MESSAGES ─────────────────────────────────────────────────────────────────
 export const messagesAPI = {
 
-  getHistory: (receiverId: string) =>
-    request(`/messages/${receiverId}`),
+  getHistory: (
+    receiverId : string
+  ) =>
+    request(
+      `/messages/${receiverId}`
+    ),
 
-  send: (data: ApiRecord) =>
-    request("/messages", {
+  send: (body: ApiRecord) =>
+    request("/messages/send", {
       method: "POST",
-      body: JSON.stringify(data),
+      body: JSON.stringify(body),
     }),
 };
 
