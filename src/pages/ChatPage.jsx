@@ -471,69 +471,102 @@ export default function ChatPage({
             </div>
 
             {/* MESSAGES */}
-            <div className="chat-msgs">
+           {/* MESSAGES */}
+<div className="chat-msgs">
 
-              {loadingMsgs ? (
+{loadingMsgs ? (
 
-                <div className="loading-center">
-                  <Spinner />
-                </div>
+  <div className="loading-center">
+    <Spinner />
+  </div>
 
-              ) : messages.length === 0 ? (
+) : messages.length === 0 ? (
 
-                <div
-                  style={{
-                    textAlign:
-                      "center",
-                    color:
-                      "var(--text3)",
-                    fontSize: 13,
-                    marginTop: 50,
-                  }}
-                >
-                  No messages yet
-                </div>
+  <div
+    style={{
+      textAlign: "center",
+      color: "var(--text3)",
+      fontSize: 13,
+      marginTop: 50,
+    }}
+  >
+    No messages yet
+  </div>
 
-              ) : (
+) : (
 
-                messages.map(
-                  (msg, i) => {
+  messages.map((msg, i) => {
 
-                    const sent =
-                      isSent(msg);
+    const sent = isSent(msg);
 
-                    return (
+    return (
 
-                      <div
-                        key={
-                          msg._id || i
-                        }
-                        className={`msg ${
-                          sent
-                            ? "sent"
-                            : "recv"
-                        }`}
-                      >
+      <div
+        key={msg._id || i}
+        style={{
+          display: "flex",
+          justifyContent: sent
+            ? "flex-end"
+            : "flex-start",
+          marginBottom: 12,
+        }}
+      >
 
-                        <div className="msg-bubble">
-                          {msg.text}
-                        </div>
+        <div
+          style={{
+            maxWidth: "75%",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: sent
+              ? "flex-end"
+              : "flex-start",
+          }}
+        >
 
-                        <div className="msg-time">
-                          {fmt(
-                            msg.createdAt
-                          )}
-                        </div>
+          {/* MESSAGE BUBBLE */}
+          <div
+            style={{
+              padding: "10px 14px",
+              borderRadius: 16,
+              background: sent
+                ? "var(--primary)"
+                : "var(--bg3)",
+              color: sent
+                ? "#fff"
+                : "var(--text)",
+              fontSize: 14,
+              lineHeight: 1.4,
+              wordBreak: "break-word",
+              border: sent
+                ? "none"
+                : "1px solid var(--border)",
+            }}
+          >
+            {msg.text}
+          </div>
 
-                      </div>
-                    );
-                  }
-                )
-              )}
+          {/* TIME */}
+          <div
+            style={{
+              fontSize: 11,
+              color: "var(--text3)",
+              marginTop: 4,
+              paddingInline: 4,
+            }}
+          >
+            {fmt(msg.createdAt)}
+          </div>
 
-              <div ref={bottomRef} />
+        </div>
 
-            </div>
+      </div>
+    );
+  })
+)}
+
+<div ref={bottomRef} />
+
+</div>
 
             {/* INPUT */}
             <div className="chat-input-row">
