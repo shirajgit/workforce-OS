@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { tasksAPI, usersAPI } from "../api/index.ts";
 import { Icon, Spinner, Badge, Modal, Confirm, Empty } from "../components/UI.jsx";
+import "../App.css";
 
 const STATUS_COLS = [
   { id: "assigned",    label: "Assigned",    color: "var(--blue)" },

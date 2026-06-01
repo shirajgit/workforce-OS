@@ -14,6 +14,7 @@ import InterviewsPage  from "./pages/InterviewsPage.jsx";
 import SubmissionsPage from "./pages/Submisionpage.tsx";
 import SalaryPage      from "./pages/SalaryPage.jsx";
 import ChatPage        from "./pages/ChatPage.jsx";
+import "./App.css";
 
 injectGlobalStyles();
 
