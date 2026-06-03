@@ -1,5 +1,5 @@
 // pages/ChatPage.jsx
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, Fragment } from "react";
 import { messagesAPI, usersAPI } from "../api/index.js";
 import { Icon, Spinner } from "../components/UI.jsx";
 
@@ -26,6 +26,38 @@ const fmtTime = (d) => {
   } catch {
     return "";
   }
+};
+
+const sameDay = (a, b) => {
+  const x = new Date(a), y = new Date(b);
+  return x.getFullYear() === y.getFullYear() && x.getMonth() === y.getMonth() && x.getDate() === y.getDate();
+};
+
+// "Today" / "Yesterday" / "3 Jun" / "3 Jun 2025"
+const dayLabel = (d) => {
+  const date = new Date(d);
+  const today = new Date();
+  const yest = new Date();
+  yest.setDate(today.getDate() - 1);
+  if (sameDay(date, today)) return "Today";
+  if (sameDay(date, yest)) return "Yesterday";
+  return date.toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    ...(date.getFullYear() !== today.getFullYear() ? { year: "numeric" } : {}),
+  });
+};
+
+// short relative time for the sidebar
+const sidebarTime = (d) => {
+  if (!d) return "";
+  const date = new Date(d);
+  const today = new Date();
+  const yest = new Date();
+  yest.setDate(today.getDate() - 1);
+  if (sameDay(date, today)) return fmtTime(date);
+  if (sameDay(date, yest)) return "Yesterday";
+  return date.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 };
 
 // ─── ChatAvatar ───────────────────────────────────────────────────────────────
@@ -68,9 +100,32 @@ function ChatAvatar({ name, size = 36, online = false }) {
   );
 }
 
+// Centered date / unread divider
+function Divider({ label, accent = false }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "center", margin: "12px 0 14px" }}>
+      <span
+        style={{
+          fontSize: 11,
+          fontWeight: 500,
+          color: accent ? "#534AB7" : "var(--text3)",
+          background: accent ? "rgba(83,74,183,0.10)" : "var(--bg3)",
+          border: `1px solid ${accent ? "rgba(83,74,183,0.25)" : "var(--border)"}`,
+          borderRadius: 20,
+          padding: "3px 12px",
+        }}
+      >
+        {label}
+      </span>
+    </div>
+  );
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function ChatPage({ user, toast }) {
   const isOwner = user.role === "owner";
+  const myId = String(user._id ?? user.id ?? "");
+  const LR_KEY = `chat:lastRead:${myId}`;
 
   const [contacts, setContacts] = useState([]);
   const [active, setActive] = useState(null);
@@ -80,17 +135,39 @@ export default function ChatPage({ user, toast }) {
   const [loadingContacts, setLoadingContacts] = useState(true);
   const [sending, setSending] = useState(false);
 
+  // per-contact metadata for the sidebar: { lastText, lastTime, lastFromMe, unread }
+  const [meta, setMeta] = useState({});
+  // read cutoffs: { [contactId]: timestamp of last read message }
+  const [lastRead, setLastRead] = useState(() => {
+    try {
+      return JSON.parse((typeof window !== "undefined" && localStorage.getItem(LR_KEY)) || "{}");
+    } catch {
+      return {};
+    }
+  });
+  // snapshot of the read cutoff when a conversation was opened (for the "Unread" line)
+  const [openCutoff, setOpenCutoff] = useState(0);
+
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
 
-  // ── KEY FIX: robust sender comparison ───────────────────────────────────────
-  // Backend populates sender as { _id, name, role } where _id is a Mongoose
-  // ObjectId; user._id from localStorage is usually a plain string. String()
-  // on both sides normalises the comparison so sent vs received is reliable.
+  const persistRead = (next) => {
+    setLastRead(next);
+    try {
+      localStorage.setItem(LR_KEY, JSON.stringify(next));
+    } catch {
+      /* ignore quota / privacy-mode errors */
+    }
+  };
+
+  // ── Robust sender comparison (ObjectId vs string) ───────────────────────────
   const isSent = (msg) => {
     const senderId = String(msg.sender?._id ?? msg.sender ?? "");
-    const meId = String(user._id ?? user.id ?? "");
-    return senderId !== "" && meId !== "" && senderId === meId;
+    return senderId !== "" && myId !== "" && senderId === myId;
+  };
+  const isFromContact = (msg, contactId) => {
+    const senderId = String(msg.sender?._id ?? msg.sender ?? "");
+    return senderId !== "" && senderId === String(contactId);
   };
 
   // ── Load contacts ────────────────────────────────────────────────────────────
@@ -115,28 +192,84 @@ export default function ChatPage({ user, toast }) {
       .finally(() => setLoadingContacts(false));
   }, [isOwner, toast]);
 
+  // ── Sidebar poll: last message + unread count per contact ───────────────────
+  // Fine for a small internal team. For large lists, add a backend summary
+  // endpoint (see the note at the bottom of this file).
+  useEffect(() => {
+    if (contacts.length === 0) return;
+    let alive = true;
+
+    const tick = async () => {
+      const entries = await Promise.all(
+        contacts.map(async (cn) => {
+          try {
+            const hist = await messagesAPI.getHistory(cn._id);
+            const arr = Array.isArray(hist) ? hist : [];
+            const last = arr[arr.length - 1];
+            const cutoff = lastRead[cn._id] || 0;
+            const unread = arr.reduce((n, m) => {
+              const t = new Date(m.createdAt).getTime();
+              return isFromContact(m, cn._id) && t > cutoff ? n + 1 : n;
+            }, 0);
+            return [
+              cn._id,
+              {
+                lastText: last?.text || "",
+                lastTime: last ? new Date(last.createdAt).getTime() : 0,
+                lastFromMe: last ? isSent(last) : false,
+                unread: active?._id === cn._id ? 0 : unread,
+              },
+            ];
+          } catch {
+            return [cn._id, null];
+          }
+        })
+      );
+      if (!alive) return;
+      setMeta((prev) => {
+        const next = { ...prev };
+        entries.forEach(([id, m]) => {
+          if (m) next[id] = m;
+        });
+        return next;
+      });
+    };
+
+    tick();
+    const id = setInterval(tick, 5000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [contacts, lastRead, active, myId]);
+
   // ── Auto-scroll to newest ─────────────────────────────────────────────────────
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   // ── Select contact + load history ─────────────────────────────────────────────
-  const selectContact = useCallback(async (contact) => {
-    setActive(contact);
-    setMessages([]);
-    setLoadingMsgs(true);
-    try {
-      const hist = await messagesAPI.getHistory(contact._id);
-      setMessages(Array.isArray(hist) ? hist : []);
-    } catch {
+  const selectContact = useCallback(
+    async (contact) => {
+      setActive(contact);
       setMessages([]);
-    } finally {
-      setLoadingMsgs(false);
-      setTimeout(() => inputRef.current?.focus(), 80);
-    }
-  }, []);
+      setLoadingMsgs(true);
+      setOpenCutoff(lastRead[contact._id] || 0); // where "Unread" should appear
+      setMeta((prev) => (prev[contact._id] ? { ...prev, [contact._id]: { ...prev[contact._id], unread: 0 } } : prev));
+      try {
+        const hist = await messagesAPI.getHistory(contact._id);
+        setMessages(Array.isArray(hist) ? hist : []);
+      } catch {
+        setMessages([]);
+      } finally {
+        setLoadingMsgs(false);
+        setTimeout(() => inputRef.current?.focus(), 80);
+      }
+    },
+    [lastRead]
+  );
 
-  // ── Auto-refresh every 2s ──────────────────────────────────────────────────────
+  // ── Auto-refresh active conversation every 2s ───────────────────────────────
   useEffect(() => {
     if (!active) return;
     const id = setInterval(async () => {
@@ -149,6 +282,16 @@ export default function ChatPage({ user, toast }) {
     }, 2000);
     return () => clearInterval(id);
   }, [active]);
+
+  // ── Mark the open conversation as read whenever messages change ─────────────
+  useEffect(() => {
+    if (!active || messages.length === 0) return;
+    const latest = messages[messages.length - 1];
+    const t = new Date(latest.createdAt).getTime();
+    if ((lastRead[active._id] || 0) >= t) return;
+    persistRead({ ...lastRead, [active._id]: t });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, active]);
 
   // ── Send ───────────────────────────────────────────────────────────────────────
   const sendMessage = async () => {
@@ -166,6 +309,19 @@ export default function ChatPage({ user, toast }) {
       inputRef.current?.focus();
     }
   };
+
+  // ── Sidebar ordering: most-recent activity first ────────────────────────────
+  const sortedContacts = [...contacts].sort(
+    (a, b) => (meta[b._id]?.lastTime || 0) - (meta[a._id]?.lastTime || 0)
+  );
+
+  // index of the first unread (received) message, for the "Unread" line
+  let firstUnreadIdx = -1;
+  if (active && openCutoff > 0) {
+    firstUnreadIdx = messages.findIndex(
+      (m) => isFromContact(m, active._id) && new Date(m.createdAt).getTime() > openCutoff
+    );
+  }
 
   // ─── Render ──────────────────────────────────────────────────────────────────
   return (
@@ -194,7 +350,7 @@ export default function ChatPage({ user, toast }) {
         {/* ── SIDEBAR ─────────────────────────────────────────────────── */}
         <div
           style={{
-            width: 240,
+            width: 270,
             flexShrink: 0,
             borderRight: "1px solid var(--border)",
             background: "var(--bg)",
@@ -240,8 +396,12 @@ export default function ChatPage({ user, toast }) {
                 No contacts available
               </div>
             ) : (
-              contacts.map((cn) => {
+              sortedContacts.map((cn) => {
                 const isActive = active?._id === cn._id;
+                const m = meta[cn._id] || {};
+                const unread = isActive ? 0 : m.unread || 0;
+                const hasUnread = unread > 0;
+                const preview = m.lastText ? (m.lastFromMe ? "You: " : "") + m.lastText : cn.role;
                 return (
                   <div
                     key={cn._id}
@@ -257,22 +417,61 @@ export default function ChatPage({ user, toast }) {
                       transition: "background 0.12s",
                     }}
                   >
-                    <ChatAvatar name={cn.name} size={36} />
+                    <ChatAvatar name={cn.name} size={40} online={hasUnread} />
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div
-                        style={{
-                          fontSize: 13.5,
-                          fontWeight: 500,
-                          color: "var(--text)",
-                          whiteSpace: "nowrap",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                        }}
-                      >
-                        {cn.name}
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+                        <span
+                          style={{
+                            fontSize: 13.5,
+                            fontWeight: hasUnread ? 700 : 500,
+                            color: "var(--text)",
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                          }}
+                        >
+                          {cn.name}
+                        </span>
+                        {m.lastTime > 0 && (
+                          <span style={{ fontSize: 10.5, color: hasUnread ? "#534AB7" : "var(--text3)", flexShrink: 0 }}>
+                            {sidebarTime(m.lastTime)}
+                          </span>
+                        )}
                       </div>
-                      <div style={{ fontSize: 11, color: "var(--text3)", textTransform: "capitalize", marginTop: 1 }}>
-                        {cn.role}
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, marginTop: 2 }}>
+                        <span
+                          style={{
+                            fontSize: 12,
+                            color: hasUnread ? "var(--text)" : "var(--text3)",
+                            fontWeight: hasUnread ? 500 : 400,
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            textTransform: m.lastText ? "none" : "capitalize",
+                          }}
+                        >
+                          {preview}
+                        </span>
+                        {hasUnread && (
+                          <span
+                            style={{
+                              flexShrink: 0,
+                              minWidth: 18,
+                              height: 18,
+                              padding: "0 5px",
+                              borderRadius: 9,
+                              background: "#534AB7",
+                              color: "#EEEDFE",
+                              fontSize: 11,
+                              fontWeight: 600,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                            }}
+                          >
+                            {unread > 99 ? "99+" : unread}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -324,7 +523,7 @@ export default function ChatPage({ user, toast }) {
               style={{
                 flex: 1,
                 overflowY: "auto",
-                padding: "20px 20px 12px",
+                padding: "16px 20px 12px",
                 display: "flex",
                 flexDirection: "column",
                 background: "var(--bg2)",
@@ -340,71 +539,74 @@ export default function ChatPage({ user, toast }) {
                 </div>
               ) : (
                 messages.map((msg, i) => {
-                  const sent = isSent(msg); // sent → right, received → left
+                  const sent = isSent(msg);
+                  const prev = messages[i - 1];
+                  const showDay = !prev || !sameDay(prev.createdAt, msg.createdAt);
+                  const showUnread = i === firstUnreadIdx;
                   return (
-                    <div
-                      key={msg._id || i}
-                      style={{
-                        display: "flex",
-                        width: "100%", // row spans full width so justifyContent can push the bubble
-                        justifyContent: sent ? "flex-end" : "flex-start",
-                        alignItems: "flex-end",
-                        gap: 8,
-                        marginBottom: 10,
-                        animation: "chatRise 0.18s ease",
-                      }}
-                    >
-                      {/* Avatar on the LEFT for received messages */}
-                      {!sent && <ChatAvatar name={active.name} size={28} />}
+                    <Fragment key={msg._id || i}>
+                      {showDay && <Divider label={dayLabel(msg.createdAt)} />}
+                      {showUnread && <Divider label="Unread messages" accent />}
 
                       <div
                         style={{
                           display: "flex",
-                          flexDirection: "column",
-                          alignItems: sent ? "flex-end" : "flex-start",
-                          maxWidth: "68%",
+                          width: "100%",
+                          justifyContent: sent ? "flex-end" : "flex-start",
+                          alignItems: "flex-end",
+                          gap: 8,
+                          marginBottom: 10,
+                          animation: "chatRise 0.18s ease",
                         }}
                       >
-                        {/* BUBBLE */}
-                        <div
-                          style={{
-                            padding: "9px 14px",
-                            fontSize: 13.5,
-                            lineHeight: 1.5,
-                            wordBreak: "break-word",
-                            borderRadius: sent ? "16px 4px 16px 16px" : "4px 16px 16px 16px",
-                            background: sent ? "#534AB7" : "var(--bg)",
-                            color: sent ? "#EEEDFE" : "var(--text)",
-                            border: sent ? "none" : "1px solid var(--border)",
-                          }}
-                        >
-                          {msg.text}
-                        </div>
+                        {!sent && <ChatAvatar name={active.name} size={28} />}
 
-                        {/* TIMESTAMP + delivered ticks */}
                         <div
                           style={{
                             display: "flex",
-                            alignItems: "center",
-                            gap: 3,
-                            marginTop: 4,
-                            fontSize: 10.5,
-                            color: "var(--text3)",
+                            flexDirection: "column",
+                            alignItems: sent ? "flex-end" : "flex-start",
+                            maxWidth: "68%",
                           }}
                         >
-                          <span>{fmtTime(msg.createdAt)}</span>
-                          {sent && (
-                            <svg width="14" height="10" viewBox="0 0 14 10" fill="none">
-                              <path d="M1 5L4.5 8.5L9 3" stroke="#1D9E75" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                              <path d="M5 5L8.5 8.5L13 3" stroke="#1D9E75" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
-                          )}
-                        </div>
-                      </div>
+                          <div
+                            style={{
+                              padding: "9px 14px",
+                              fontSize: 13.5,
+                              lineHeight: 1.5,
+                              wordBreak: "break-word",
+                              borderRadius: sent ? "16px 4px 16px 16px" : "4px 16px 16px 16px",
+                              background: sent ? "#534AB7" : "var(--bg)",
+                              color: sent ? "#EEEDFE" : "var(--text)",
+                              border: sent ? "none" : "1px solid var(--border)",
+                            }}
+                          >
+                            {msg.text}
+                          </div>
 
-                      {/* Spacer on the RIGHT keeps sent rows aligned with received ones */}
-                      {sent && <div style={{ width: 28, flexShrink: 0 }} />}
-                    </div>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 3,
+                              marginTop: 4,
+                              fontSize: 10.5,
+                              color: "var(--text3)",
+                            }}
+                          >
+                            <span>{fmtTime(msg.createdAt)}</span>
+                            {sent && (
+                              <svg width="14" height="10" viewBox="0 0 14 10" fill="none">
+                                <path d="M1 5L4.5 8.5L9 3" stroke="#1D9E75" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                <path d="M5 5L8.5 8.5L13 3" stroke="#1D9E75" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            )}
+                          </div>
+                        </div>
+
+                        {sent && <div style={{ width: 28, flexShrink: 0 }} />}
+                      </div>
+                    </Fragment>
                   );
                 })
               )}
@@ -480,3 +682,12 @@ export default function ChatPage({ user, toast }) {
     </div>
   );
 }
+
+/*
+  NOTE on unread at scale:
+  The sidebar polls each contact's history every 5s to compute unread counts —
+  fine for a small internal team. For many contacts, add a backend summary
+  endpoint instead, e.g. GET /api/messages/unread -> { "<contactId>": 3, ... },
+  combined with a stored per-user "lastReadAt". For real "seen" ticks, add
+  `seen: Boolean` to the message schema and mark a conversation seen on open.
+*/
