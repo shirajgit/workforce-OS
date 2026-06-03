@@ -1,86 +1,56 @@
 // pages/ChatPage.jsx
+import { useState, useEffect, useRef, useCallback } from "react";
+import { messagesAPI, usersAPI } from "../api/index.js";
+import { Icon, Spinner } from "../components/UI.jsx";
 
-import {
-  useState,
-  useEffect,
-  useRef,
-  useCallback,
-} from "react";
-
-import {
-  messagesAPI,
-  usersAPI,
-} from "../api/index.js";
-
-import {
-  Icon,
-  Spinner,
-  Avatar,
-} from "../components/UI.jsx";
-
-// ─── Helpers ────────────────────────────────────────────────
+// ─── Helpers ────────────────────────────────────────────────────────────────
 const getInitials = (name = "") =>
-  name
-    .split(" ")
-    .slice(0, 2)
-    .map((w) => w[0])
-    .join("")
-    .toUpperCase();
+  name.split(" ").slice(0, 2).map((w) => w[0]).join("").toUpperCase();
 
 const AVATAR_COLORS = [
-  { bg: "#534AB7", text: "#EEEDFE" },
-  { bg: "#185FA5", text: "#E6F1FB" },
-  { bg: "#0F6E56", text: "#E1F5EE" },
-  { bg: "#993C1D", text: "#FAECE7" },
-  { bg: "#993556", text: "#FBEAF0" },
+  { bg: "#534AB7", fg: "#EEEDFE" },
+  { bg: "#185FA5", fg: "#E6F1FB" },
+  { bg: "#0F6E56", fg: "#E1F5EE" },
+  { bg: "#993C1D", fg: "#FAECE7" },
+  { bg: "#993556", fg: "#FBEAF0" },
 ];
-
-const avatarColor = (name = "") => {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + hash * 31;
-  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+const pickColor = (name = "") => {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + h * 31;
+  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
 };
 
-const fmt = (d) => {
+const fmtTime = (d) => {
   try {
-    return new Date(d).toLocaleTimeString("en-IN", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    return new Date(d).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
   } catch {
     return "";
   }
 };
 
-// ─── Sub-components ─────────────────────────────────────────
-function ChatAvatar({ name, size = 38, showOnline = false }) {
-  const { bg, text } = avatarColor(name);
+// ─── ChatAvatar ───────────────────────────────────────────────────────────────
+function ChatAvatar({ name, size = 36, online = false }) {
+  const { bg, fg } = pickColor(name);
   return (
-    <div
-      style={{
-        position: "relative",
-        width: size,
-        height: size,
-        flexShrink: 0,
-      }}
-    >
+    <div style={{ position: "relative", width: size, height: size, flexShrink: 0 }}>
       <div
         style={{
           width: size,
           height: size,
           borderRadius: "50%",
           background: bg,
-          color: text,
+          color: fg,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          fontSize: size * 0.34,
+          fontSize: size * 0.36,
           fontWeight: 500,
+          userSelect: "none",
         }}
       >
         {getInitials(name)}
       </div>
-      {showOnline && (
+      {online && (
         <div
           style={{
             position: "absolute",
@@ -98,31 +68,7 @@ function ChatAvatar({ name, size = 38, showOnline = false }) {
   );
 }
 
-function IconBtn({ icon, onClick, title }) {
-  return (
-    <button
-      title={title}
-      onClick={onClick}
-      style={{
-        width: 34,
-        height: 34,
-        borderRadius: "50%",
-        border: "none",
-        background: "transparent",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        color: "var(--text3)",
-        cursor: "pointer",
-        fontSize: 18,
-      }}
-    >
-      <Icon name={icon} size={18} />
-    </button>
-  );
-}
-
-// ─── Main Component ─────────────────────────────────────────
+// ─── Main ─────────────────────────────────────────────────────────────────────
 export default function ChatPage({ user, toast }) {
   const isOwner = user.role === "owner";
 
@@ -137,17 +83,30 @@ export default function ChatPage({ user, toast }) {
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
 
-  // ── Load Contacts ──────────────────────────────────────────
+  // ── KEY FIX: robust sender comparison ───────────────────────────────────────
+  // Backend populates sender as { _id, name, role } where _id is a Mongoose
+  // ObjectId; user._id from localStorage is usually a plain string. String()
+  // on both sides normalises the comparison so sent vs received is reliable.
+  const isSent = (msg) => {
+    const senderId = String(msg.sender?._id ?? msg.sender ?? "");
+    const meId = String(user._id ?? user.id ?? "");
+    return senderId !== "" && meId !== "" && senderId === meId;
+  };
+
+  // ── Load contacts ────────────────────────────────────────────────────────────
   useEffect(() => {
     usersAPI
       .getAll()
       .then((all) => {
-        if (isOwner) {
-          setContacts(all.filter((u) => u.role !== "owner"));
-        } else {
-          const owner = all.find((u) => u.role === "owner");
-          setContacts(owner ? [owner] : []);
-        }
+        const list = Array.isArray(all) ? all : [];
+        setContacts(
+          isOwner
+            ? list.filter((u) => u.role !== "owner")
+            : (() => {
+                const owner = list.find((u) => u.role === "owner");
+                return owner ? [owner] : [];
+              })()
+        );
       })
       .catch(() => {
         toast("Failed to load contacts", "error");
@@ -156,12 +115,12 @@ export default function ChatPage({ user, toast }) {
       .finally(() => setLoadingContacts(false));
   }, [isOwner, toast]);
 
-  // ── Auto Scroll ────────────────────────────────────────────
+  // ── Auto-scroll to newest ─────────────────────────────────────────────────────
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // ── Load Message History ───────────────────────────────────
+  // ── Select contact + load history ─────────────────────────────────────────────
   const selectContact = useCallback(async (contact) => {
     setActive(contact);
     setMessages([]);
@@ -173,33 +132,33 @@ export default function ChatPage({ user, toast }) {
       setMessages([]);
     } finally {
       setLoadingMsgs(false);
-      setTimeout(() => inputRef.current?.focus(), 100);
+      setTimeout(() => inputRef.current?.focus(), 80);
     }
   }, []);
 
-  // ── Auto Refresh ───────────────────────────────────────────
+  // ── Auto-refresh every 2s ──────────────────────────────────────────────────────
   useEffect(() => {
     if (!active) return;
-    const interval = setInterval(async () => {
+    const id = setInterval(async () => {
       try {
         const hist = await messagesAPI.getHistory(active._id);
-        setMessages(hist);
-      } catch (err) {
-        console.log(err);
+        if (Array.isArray(hist)) setMessages(hist);
+      } catch {
+        /* ignore transient poll errors */
       }
     }, 2000);
-    return () => clearInterval(interval);
+    return () => clearInterval(id);
   }, [active]);
 
-  // ── Send Message ───────────────────────────────────────────
+  // ── Send ───────────────────────────────────────────────────────────────────────
   const sendMessage = async () => {
-    if (!input.trim() || !active) return;
+    const text = input.trim();
+    if (!text || !active) return;
+    setSending(true);
+    setInput("");
     try {
-      setSending(true);
-      const text = input.trim();
-      setInput("");
-      const newMessage = await messagesAPI.send({ receiver: active._id, text });
-      setMessages((prev) => [...prev, newMessage]);
+      const msg = await messagesAPI.send({ receiver: active._id, text });
+      setMessages((prev) => [...prev, msg]);
     } catch {
       toast("Failed to send message", "error");
     } finally {
@@ -208,22 +167,9 @@ export default function ChatPage({ user, toast }) {
     }
   };
 
-  const isSent = (msg) => {
-    const s = msg.sender?._id || msg.sender;
-    return s === user._id;
-  };
-
-  // ── Render ─────────────────────────────────────────────────
+  // ─── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        height: "100vh",
-        overflow: "hidden",
-        background: "var(--bg)",
-      }}
-    >
+    <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
       {/* PAGE HEADER */}
       <div className="ph" style={{ paddingBottom: 14 }}>
         <div>
@@ -233,94 +179,73 @@ export default function ChatPage({ user, toast }) {
         <div style={{ fontSize: 12, color: "var(--text3)" }}>Messages synced</div>
       </div>
 
-      {/* CHAT LAYOUT */}
+      {/* MAIN CHAT LAYOUT */}
       <div
         style={{
           flex: 1,
           overflow: "hidden",
           margin: "0 26px 26px",
-          border: "0.5px solid var(--border)",
+          border: "1px solid var(--border)",
           borderRadius: "var(--r)",
           display: "flex",
           background: "var(--bg2)",
         }}
       >
-        {/* ── SIDEBAR ── */}
+        {/* ── SIDEBAR ─────────────────────────────────────────────────── */}
         <div
           style={{
             width: 240,
             flexShrink: 0,
-            borderRight: "0.5px solid var(--border)",
+            borderRight: "1px solid var(--border)",
             background: "var(--bg)",
             display: "flex",
             flexDirection: "column",
             overflow: "hidden",
           }}
         >
-          {/* Sidebar header */}
           <div
             style={{
               padding: "14px 16px 10px",
-              borderBottom: "0.5px solid var(--border)",
+              borderBottom: "1px solid var(--border)",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
             }}
           >
-            <div
-              style={{
-                fontSize: 13,
-                fontWeight: 500,
-                color: "var(--text)",
-              }}
-            >
-              Contacts
-              {contacts.length > 0 && (
-                <span
-                  style={{
-                    marginLeft: 6,
-                    fontSize: 11,
-                    fontWeight: 400,
-                    background: "var(--bg3)",
-                    border: "0.5px solid var(--border)",
-                    borderRadius: 20,
-                    padding: "1px 8px",
-                    color: "var(--text3)",
-                  }}
-                >
-                  {contacts.length}
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Contact list */}
-          <div style={{ flex: 1, overflowY: "auto" }}>
-            {loadingContacts ? (
-              <div
+            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>Contacts</span>
+            {contacts.length > 0 && (
+              <span
                 style={{
-                  display: "flex",
-                  justifyContent: "center",
-                  padding: 30,
+                  fontSize: 11,
+                  fontWeight: 500,
+                  background: "var(--bg3)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 20,
+                  padding: "1px 8px",
+                  color: "var(--text3)",
                 }}
               >
+                {contacts.length}
+              </span>
+            )}
+          </div>
+
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            {loadingContacts ? (
+              <div style={{ display: "flex", justifyContent: "center", padding: 30 }}>
                 <Spinner />
               </div>
             ) : contacts.length === 0 ? (
-              <div
-                style={{
-                  padding: "30px 16px",
-                  textAlign: "center",
-                  color: "var(--text3)",
-                  fontSize: 12.5,
-                }}
-              >
+              <div style={{ padding: "30px 16px", textAlign: "center", color: "var(--text3)", fontSize: 12.5 }}>
                 No contacts available
               </div>
             ) : (
-              contacts.map((c) => {
-                const isActive = active?._id === c._id;
+              contacts.map((cn) => {
+                const isActive = active?._id === cn._id;
                 return (
                   <div
-                    key={c._id}
-                    onClick={() => selectContact(c)}
+                    key={cn._id}
+                    onClick={() => selectContact(cn)}
                     style={{
                       display: "flex",
                       alignItems: "center",
@@ -328,13 +253,11 @@ export default function ChatPage({ user, toast }) {
                       padding: "10px 14px",
                       cursor: "pointer",
                       background: isActive ? "var(--bg2)" : "transparent",
-                      borderLeft: isActive
-                        ? "2px solid #534AB7"
-                        : "2px solid transparent",
-                      transition: "background 0.15s",
+                      borderLeft: isActive ? "2px solid #534AB7" : "2px solid transparent",
+                      transition: "background 0.12s",
                     }}
                   >
-                    <ChatAvatar name={c.name} size={36} />
+                    <ChatAvatar name={cn.name} size={36} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div
                         style={{
@@ -346,17 +269,10 @@ export default function ChatPage({ user, toast }) {
                           textOverflow: "ellipsis",
                         }}
                       >
-                        {c.name}
+                        {cn.name}
                       </div>
-                      <div
-                        style={{
-                          fontSize: 11,
-                          color: "var(--text3)",
-                          textTransform: "capitalize",
-                          marginTop: 1,
-                        }}
-                      >
-                        {c.role}
+                      <div style={{ fontSize: 11, color: "var(--text3)", textTransform: "capitalize", marginTop: 1 }}>
+                        {cn.role}
                       </div>
                     </div>
                   </div>
@@ -366,7 +282,7 @@ export default function ChatPage({ user, toast }) {
           </div>
         </div>
 
-        {/* ── CHAT WINDOW ── */}
+        {/* ── CHAT WINDOW ─────────────────────────────────────────────── */}
         {!active ? (
           <div
             style={{
@@ -383,152 +299,111 @@ export default function ChatPage({ user, toast }) {
             <div style={{ fontSize: 13.5 }}>Select a contact to start chatting</div>
           </div>
         ) : (
-          <div
-            style={{
-              flex: 1,
-              display: "flex",
-              flexDirection: "column",
-              overflow: "hidden",
-            }}
-          >
-            {/* ── TOP BAR ── */}
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            {/* TOP BAR */}
             <div
               style={{
                 display: "flex",
                 alignItems: "center",
                 gap: 12,
                 padding: "10px 18px",
-                borderBottom: "0.5px solid var(--border)",
+                borderBottom: "1px solid var(--border)",
                 background: "var(--bg)",
                 flexShrink: 0,
               }}
             >
-              <ChatAvatar name={active.name} size={38} showOnline />
+              <ChatAvatar name={active.name} size={38} online />
               <div style={{ flex: 1 }}>
-                <div
-                  style={{
-                    fontSize: 14,
-                    fontWeight: 600,
-                    color: "var(--text)",
-                  }}
-                >
-                  {active.name}
-                </div>
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: "#1D9E75",
-                    marginTop: 1,
-                  }}
-                >
-                  Online
-                </div>
-              </div>
-              <div style={{ display: "flex", gap: 2 }}>
-                <IconBtn icon="phone" title="Call" />
-                <IconBtn icon="dots-vertical" title="More options" />
+                <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>{active.name}</div>
+                <div style={{ fontSize: 11, color: "#1D9E75", marginTop: 1 }}>Online</div>
               </div>
             </div>
 
-            {/* ── MESSAGES ── */}
+            {/* MESSAGES AREA */}
             <div
               style={{
                 flex: 1,
                 overflowY: "auto",
-                padding: "16px 20px 10px",
+                padding: "20px 20px 12px",
                 display: "flex",
                 flexDirection: "column",
-                gap: 2,
                 background: "var(--bg2)",
               }}
             >
               {loadingMsgs ? (
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "center",
-                    marginTop: 60,
-                  }}
-                >
+                <div style={{ display: "flex", justifyContent: "center", marginTop: 60 }}>
                   <Spinner />
                 </div>
               ) : messages.length === 0 ? (
-                <div
-                  style={{
-                    textAlign: "center",
-                    color: "var(--text3)",
-                    fontSize: 13,
-                    marginTop: 60,
-                  }}
-                >
+                <div style={{ textAlign: "center", color: "var(--text3)", fontSize: 13, marginTop: 60 }}>
                   No messages yet. Say hello 👋
                 </div>
               ) : (
                 messages.map((msg, i) => {
-                  const sent = isSent(msg);
+                  const sent = isSent(msg); // sent → right, received → left
                   return (
                     <div
                       key={msg._id || i}
                       style={{
                         display: "flex",
+                        width: "100%", // row spans full width so justifyContent can push the bubble
                         justifyContent: sent ? "flex-end" : "flex-start",
-                        marginBottom: 6,
-                        animation: "fadeUp 0.18s ease",
+                        alignItems: "flex-end",
+                        gap: 8,
+                        marginBottom: 10,
+                        animation: "chatRise 0.18s ease",
                       }}
                     >
-                      {/* Receiver avatar */}
-                      {!sent && (
-                        <div style={{ marginRight: 8, alignSelf: "flex-end" }}>
-                          <ChatAvatar name={active.name} size={26} />
-                        </div>
-                      )}
+                      {/* Avatar on the LEFT for received messages */}
+                      {!sent && <ChatAvatar name={active.name} size={28} />}
 
                       <div
                         style={{
-                          maxWidth: "68%",
                           display: "flex",
                           flexDirection: "column",
                           alignItems: sent ? "flex-end" : "flex-start",
+                          maxWidth: "68%",
                         }}
                       >
-                        {/* Bubble */}
+                        {/* BUBBLE */}
                         <div
                           style={{
                             padding: "9px 14px",
-                            borderRadius: sent
-                              ? "16px 16px 4px 16px"
-                              : "16px 16px 16px 4px",
+                            fontSize: 13.5,
+                            lineHeight: 1.5,
+                            wordBreak: "break-word",
+                            borderRadius: sent ? "16px 4px 16px 16px" : "4px 16px 16px 16px",
                             background: sent ? "#534AB7" : "var(--bg)",
                             color: sent ? "#EEEDFE" : "var(--text)",
-                            fontSize: 13.5,
-                            lineHeight: 1.45,
-                            wordBreak: "break-word",
-                            border: sent
-                              ? "none"
-                              : "0.5px solid var(--border)",
+                            border: sent ? "none" : "1px solid var(--border)",
                           }}
                         >
                           {msg.text}
                         </div>
 
-                        {/* Timestamp + tick */}
+                        {/* TIMESTAMP + delivered ticks */}
                         <div
                           style={{
                             display: "flex",
                             alignItems: "center",
-                            gap: 4,
-                            marginTop: 3,
-                            paddingInline: 4,
+                            gap: 3,
+                            marginTop: 4,
                             fontSize: 10.5,
                             color: "var(--text3)",
                           }}
                         >
-                          <span>{fmt(msg.createdAt)}</span>
+                          <span>{fmtTime(msg.createdAt)}</span>
                           {sent && (
-                            <Icon name="checks" size={13} color="#1D9E75" />
+                            <svg width="14" height="10" viewBox="0 0 14 10" fill="none">
+                              <path d="M1 5L4.5 8.5L9 3" stroke="#1D9E75" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                              <path d="M5 5L8.5 8.5L13 3" stroke="#1D9E75" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
                           )}
                         </div>
                       </div>
+
+                      {/* Spacer on the RIGHT keeps sent rows aligned with received ones */}
+                      {sent && <div style={{ width: 28, flexShrink: 0 }} />}
                     </div>
                   );
                 })
@@ -536,80 +411,51 @@ export default function ChatPage({ user, toast }) {
               <div ref={bottomRef} />
             </div>
 
-            {/* ── INPUT BAR ── */}
+            {/* INPUT BAR */}
             <div
               style={{
                 display: "flex",
                 alignItems: "center",
                 gap: 8,
                 padding: "10px 14px",
-                borderTop: "0.5px solid var(--border)",
+                borderTop: "1px solid var(--border)",
                 background: "var(--bg)",
                 flexShrink: 0,
               }}
             >
-              {/* Attach button */}
-              <button
-                style={{
-                  width: 34,
-                  height: 34,
-                  borderRadius: "50%",
-                  border: "none",
-                  background: "transparent",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  color: "var(--text3)",
-                  cursor: "pointer",
-                  fontSize: 18,
-                  flexShrink: 0,
-                }}
-              >
-                <Icon name="paperclip" size={18} />
-              </button>
-
-              {/* Text input */}
               <input
                 ref={inputRef}
                 placeholder={`Message ${active.name}...`}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) =>
-                  e.key === "Enter" && !e.shiftKey && sendMessage()
-                }
+                onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendMessage()}
                 disabled={sending}
                 style={{
                   flex: 1,
-                  height: 38,
+                  height: 40,
                   borderRadius: 20,
-                  border: "0.5px solid var(--border)",
+                  border: "1px solid var(--border)",
                   background: "var(--bg2)",
-                  padding: "0 16px",
+                  padding: "0 18px",
                   fontSize: 13.5,
                   color: "var(--text)",
                   outline: "none",
                   fontFamily: "inherit",
                 }}
               />
-
-              {/* Send button */}
               <button
                 onClick={sendMessage}
                 disabled={!input.trim() || sending}
                 style={{
-                  width: 38,
-                  height: 38,
+                  width: 40,
+                  height: 40,
                   borderRadius: "50%",
                   border: "none",
-                  background:
-                    !input.trim() || sending
-                      ? "var(--bg3)"
-                      : "#534AB7",
+                  background: input.trim() && !sending ? "#534AB7" : "var(--bg3)",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  cursor:
-                    !input.trim() || sending ? "not-allowed" : "pointer",
+                  cursor: input.trim() && !sending ? "pointer" : "not-allowed",
                   flexShrink: 0,
                   transition: "background 0.15s",
                 }}
@@ -617,13 +463,10 @@ export default function ChatPage({ user, toast }) {
                 {sending ? (
                   <Spinner />
                 ) : (
-                  <Icon
-                    name="send-2"
-                    size={16}
-                    color={
-                      !input.trim() ? "var(--text3)" : "#EEEDFE"
-                    }
-                  />
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                    <path d="M22 2L11 13" stroke={input.trim() ? "#EEEDFE" : "var(--text3)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M22 2L15 22L11 13L2 9L22 2Z" stroke={input.trim() ? "#EEEDFE" : "var(--text3)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
                 )}
               </button>
             </div>
@@ -631,12 +474,8 @@ export default function ChatPage({ user, toast }) {
         )}
       </div>
 
-      {/* Bubble fade-up animation */}
       <style>{`
-        @keyframes fadeUp {
-          from { opacity: 0; transform: translateY(6px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
+        @keyframes chatRise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
       `}</style>
     </div>
   );
