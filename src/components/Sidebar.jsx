@@ -415,7 +415,7 @@ export default function Sidebar({ user, active, setActive, logout }) {
         <div className="sb-logo">
           <div className="sb-logo-icon">WO</div>
           <div>
-            <div className="sb-logo-name">Workforce OS</div>
+            <div className="sb-logo-name">Workmax OS</div>
             <div className="sb-logo-sub">Hub Platform</div>
           </div>
         </div>

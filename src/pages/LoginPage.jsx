@@ -34,7 +34,7 @@ export default function LoginPage({ onLogin }) {
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 28 }}>
           <div className="sb-logo-icon" style={{ width: 40, height: 40, fontSize: 16 }}>WO</div>
           <div>
-            <div style={{ fontFamily: "Syne", fontWeight: 800, fontSize: 19 }}>Workforce OS</div>
+            <div style={{ fontFamily: "Syne", fontWeight: 800, fontSize: 19 }}>Workmax OS</div>
             <div style={{ fontSize: 11, color: "var(--text3)", letterSpacing: "1px", textTransform: "uppercase" }}>
               Management Platform
             </div>

@@ -262,12 +262,12 @@ export default function DashboardPage() {
       <div className="ph">
         <div>
           <div className="ph-title">
-            Workforce Dashboard
+            Workmax Dashboard
           </div>
 
           <div className="ph-sub">
             Monitor your
-            workforce,
+            Workmax,
             productivity,
             interviews and
             project health
